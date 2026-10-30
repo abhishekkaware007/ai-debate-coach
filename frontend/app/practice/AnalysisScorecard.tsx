@@ -1,4 +1,4 @@
-w"use client";
+"use client";
 
 import React from "react";
 import {
@@ -29,6 +29,40 @@ interface AnalysisResponse {
 interface AnalysisScorecardProps {
   analysisResult: AnalysisResponse;
   onReset: () => void;
+}
+
+function buildVoiceSuggestions(scores: Scores, tips: string[]): string[] {
+  const suggestions: string[] = [];
+
+  if (scores.fluency < 70) {
+    suggestions.push("Reduce filler words such as 'um', 'uh', and 'like' by pausing briefly before key points.");
+  }
+  if (scores.confidence < 70) {
+    suggestions.push("Use more decisive openings such as 'The key issue here is...' to sound more confident and authoritative.");
+  }
+  if (scores.clarity < 70) {
+    suggestions.push("Break long ideas into shorter, clearer sentences and end each point with one clean takeaway.");
+  }
+  if (scores.structure < 70) {
+    suggestions.push("Organize your answer in a simple structure: claim, evidence, and result.");
+  }
+  if (scores.engagement < 70) {
+    suggestions.push("Raise attention by emphasizing the strongest point earlier and varying your pace on key moments.");
+  }
+
+  if (suggestions.length === 0) {
+    suggestions.push("Your delivery is strong. Keep your pacing steady and emphasize the strongest point to stay memorable.");
+  }
+
+  return [...suggestions, ...tips].slice(0, 5);
+}
+
+function buildFacialSuggestions(): string[] {
+  return [
+    "Keep your eyes on the camera and maintain a steady, composed expression throughout your response.",
+    "Relax your jaw and shoulders when you are explaining a difficult example to appear calmer and more confident.",
+    "Use a warm, engaged expression that matches your message instead of switching to tense or distracted facial cues."
+  ];
 }
 
 export default function AnalysisScorecard({
@@ -230,6 +264,32 @@ export default function AnalysisScorecard({
               <p className="text-xs text-slate-700 leading-relaxed font-medium">{tip}</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="pt-4 border-t border-slate-200 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+          <h3 className="text-sm font-bold text-emerald-900 mb-3">Voice improvement suggestions</h3>
+          <ul className="space-y-2 text-xs text-emerald-900 leading-relaxed">
+            {buildVoiceSuggestions(analysisResult.scores, analysisResult.tips).map((item, idx) => (
+              <li key={idx} className="flex items-start gap-2">
+                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <h3 className="text-sm font-bold text-amber-900 mb-3">Facial expression suggestions</h3>
+          <ul className="space-y-2 text-xs text-amber-900 leading-relaxed">
+            {buildFacialSuggestions().map((item, idx) => (
+              <li key={idx} className="flex items-start gap-2">
+                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>

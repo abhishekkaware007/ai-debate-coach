@@ -8,3 +8,4 @@ __pycache__
 .venv/
 .DS_Store
 .venv/node_modules/
+backend/sessions.db

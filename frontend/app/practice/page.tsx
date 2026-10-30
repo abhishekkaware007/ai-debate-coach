@@ -18,8 +18,8 @@ const AnalysisScorecard = dynamic(() => import("./AnalysisScorecard"), {
   ),
 });
 
-// face-api.js model CDN — official weights hosted on unpkg
-const FACE_API_CDN = "https://unpkg.com/face-api.js@0.22.2/weights";
+// face-api.js local models from public/models
+const FACE_API_CDN = "/models";
 
 // Expression label display config
 const EXPRESSION_CONFIG: Record<
@@ -547,8 +547,8 @@ export default function PracticePage() {
       });
 
       if (!response.ok) {
-        // Fallback directly to port 8000
-        const fallbackRes = await fetch("http://127.0.0.1:8000/analyze", {
+        // Fallback directly to port 8001
+        const fallbackRes = await fetch("http://127.0.0.1:8001/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -569,7 +569,7 @@ export default function PracticePage() {
     } catch (err: any) {
       console.error("Error analyzing speech:", err);
       try {
-        const fallbackRes = await fetch("http://127.0.0.1:8000/analyze", {
+        const fallbackRes = await fetch("http://127.0.0.1:8001/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -587,7 +587,7 @@ export default function PracticePage() {
       }
 
       setError(
-        "Could not connect to the Python FastAPI backend on port 8000. Ensure the backend server is running."
+        "Could not connect to the Python FastAPI backend on port 8001. Ensure the backend server is running."
       );
     } finally {
       setIsAnalyzing(false);
@@ -712,6 +712,12 @@ export default function PracticePage() {
 
         {/* Status Indicators */}
         <div className="flex items-center gap-3">
+          <a
+            href="/dashboard"
+            className="rounded-lg border border-indigo-200 bg-white px-3.5 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
+          >
+            Session dashboard
+          </a>
           <div
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold border ${
               isRecording

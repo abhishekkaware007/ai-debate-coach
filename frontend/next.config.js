@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const BACKEND = "http://127.0.0.1:8000";
+
 const nextConfig = {
   reactStrictMode: true,
   webpack: (config, { isServer }) => {
@@ -16,7 +18,23 @@ const nextConfig = {
     return [
       {
         source: "/api/analyze",
-        destination: "http://127.0.0.1:8000/analyze",
+        destination: `${BACKEND}/analyze`,
+      },
+      {
+        source: "/api/sessions",
+        destination: `${BACKEND}/sessions`,
+      },
+      {
+        source: "/api/mock-interview/:path*",
+        destination: `${BACKEND}/api/mock-interview/:path*`,
+      },
+      {
+        source: "/api/debate/:path*",
+        destination: `${BACKEND}/api/debate/:path*`,
+      },
+      {
+        source: "/test-llm",
+        destination: `${BACKEND}/test-llm`,
       },
     ];
   },

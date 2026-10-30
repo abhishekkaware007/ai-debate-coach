@@ -6,6 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from groq import Groq
+from routes.sessions import save_session
 
 try:
     import spacy
@@ -59,7 +60,21 @@ if spacy is not None:
         nlp = None
 
 # Target filler words and hedge phrases
-TARGET_FILLERS = ["um", "uh", "like", "you know", "basically"]
+TARGET_FILLERS = [
+    "um",
+    "uh",
+    "like",
+    "you know",
+    "basically",
+    "so",
+    "well",
+    "actually",
+    "right",
+    "okay",
+    "I mean",
+    "yeah",
+    "hmm",
+]
 HEDGE_PHRASES = [
     "i think maybe",
     "i guess",
@@ -88,6 +103,7 @@ class AnalysisResponse(BaseModel):
     scores: Scores
     tips: List[str]
     transcript: str
+    pause_estimate_seconds: float | None = None
 
 
 def run_spacy_sanity_check(text: str):
@@ -144,6 +160,12 @@ def run_spacy_sanity_check(text: str):
         "hedge_counts": hedge_counts,
         "filler_ratio": round(filler_ratio, 2),
         "hedge_ratio": round(hedge_ratio, 2),
+        # Detect consecutive filler repeats (e.g., "um um")
+        "consecutive_filler_repeats": sum(
+            1 for i in range(len(words) - 1) if words[i].lower() in TARGET_FILLERS and words[i].lower() == words[i + 1].lower()
+        ),
+        # Estimate pause time based on filler count (assume ~0.5 sec per filler)
+        "pause_estimate_seconds": round(total_fillers * 0.5, 1),
     }
 
 
@@ -341,6 +363,8 @@ async def analyze_speech(payload: AnalysisRequest):
         },
         "tips": tips,
         "transcript": transcript,
+        "pause_estimate_seconds": stats.get("pause_estimate_seconds"),
     }
 
+    save_session(response_data)
     return response_data
