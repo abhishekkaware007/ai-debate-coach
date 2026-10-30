@@ -78,6 +78,7 @@ export default function ChatUI({
   // ---- Voice Input (Speech-to-Text) State ----
   const [recognizing, setRecognizing] = useState(false);
   const [interimText, setInterimText] = useState("");
+  const [voiceInputWarning, setVoiceInputWarning] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
   const baseInputRef = useRef<string>("");
   const interimTranscriptRef = useRef<string>("");
@@ -265,11 +266,15 @@ export default function ChatUI({
   // Stop speech recognition
   const stopRecognition = useCallback(() => {
     clearSilenceTimers();
-    if (recognitionRef.current) {
+    const currentRecognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (currentRecognition) {
       try {
-        recognitionRef.current.stop();
+        currentRecognition.onend = null;
+        currentRecognition.onresult = null;
+        currentRecognition.onerror = null;
+        currentRecognition.stop();
       } catch {}
-      recognitionRef.current = null;
     }
     baseInputRef.current = "";
     interimTranscriptRef.current = "";
@@ -343,16 +348,45 @@ export default function ChatUI({
     [apiUrl, clearTurnTranscript, stopRecognition, stopSpeaking]
   );
 
+  const submitTextInput = useCallback(
+    (text: string) => {
+      const cleaned = text.trim();
+      if (!cleaned || loading || sessionCompleteRef.current || requestInFlightRef.current) return;
+      clearSilenceTimers();
+      baseInputRef.current = "";
+      interimTranscriptRef.current = "";
+      setInput("");
+      setInterimText("");
+      void sendMessage(cleaned);
+    },
+    [clearSilenceTimers, loading, sendMessage]
+  );
+
   // Speech Recognition start
   const startRecognition = useCallback(() => {
+    if (typeof window === "undefined") return;
+
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const isElectronBrowser = /electron/i.test(navigator.userAgent || "");
 
-    if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Chrome, Safari, or Edge.");
+    if (isElectronBrowser) {
+      const message = "Voice input is not supported in this embedded browser. Open the app in Chrome or Edge and allow microphone access to use speech-to-text.";
+      setVoiceInputWarning(message);
+      alert(message);
+      setRecognizing(false);
+      setInterimText("");
       return;
     }
 
+    if (!SpeechRecognition) {
+      const message = "Speech recognition is not supported in this browser. Please use Chrome or Edge.";
+      setVoiceInputWarning(message);
+      alert(message);
+      return;
+    }
+
+    setVoiceInputWarning(null);
     stopSpeaking();
     clearSilenceTimers();
 
@@ -367,6 +401,14 @@ export default function ChatUI({
       interimTranscriptRef.current = "";
       setInput("");
       setInterimText("");
+
+      const flushPendingSpeech = () => {
+        const finalText = (baseInputRef.current + " " + interimTranscriptRef.current).trim();
+        if (!finalText) return;
+        if (!requestInFlightRef.current && !sessionCompleteRef.current && !loading) {
+          submitTextInput(finalText);
+        }
+      };
 
       const scheduleAutoTurn = (interim: string) => {
         if (!autoFlow) return;
@@ -383,9 +425,10 @@ export default function ChatUI({
           clearSilenceTimers();
           const textToSend = (baseInputRef.current + " " + interimTranscriptRef.current).trim();
           if (textToSend) {
-            sendMessage(textToSend);
+            submitTextInput(textToSend);
           } else {
-            sendMessage("", true);
+            clearSilenceTimers();
+            void sendMessage("", true);
           }
         }, 4500);
       };
@@ -401,11 +444,11 @@ export default function ChatUI({
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const item = event.results[i];
-          const transcript = item[0].transcript;
+          const transcript = item[0].transcript.trim();
           if (item.isFinal) {
             finalChunk += transcript + " ";
           } else {
-            currentInterim += transcript;
+            currentInterim += transcript + " ";
           }
         }
 
@@ -413,26 +456,71 @@ export default function ChatUI({
           baseInputRef.current += finalChunk;
           setInput(baseInputRef.current.trim());
         }
-        setInterimText(currentInterim);
-        interimTranscriptRef.current = currentInterim;
 
-        const fullCurrentText = (baseInputRef.current + " " + currentInterim).trim();
-        if (fullCurrentText) scheduleAutoTurn(currentInterim);
+        const mergedInterim = currentInterim.trim();
+        setInterimText(mergedInterim);
+        interimTranscriptRef.current = mergedInterim;
+
+        const fullCurrentText = (baseInputRef.current + " " + mergedInterim).trim();
+        if (fullCurrentText) {
+          scheduleAutoTurn(mergedInterim);
+        }
       };
 
       recognition.onerror = (e: any) => {
-        console.warn("Speech recognition warning:", e.error);
-        if (e.error === "not-allowed") {
-          alert("Microphone permission was denied. Please allow microphone access.");
+        const errorCode = e?.error || "unknown";
+        console.warn("Speech recognition warning:", errorCode);
+
+        const nonRetryableErrors = [
+          "not-allowed",
+          "service-not-allowed",
+          "audio-capture",
+          "network",
+          "language-not-supported",
+        ];
+
+        if (nonRetryableErrors.includes(errorCode)) {
+          recognitionRef.current = null;
+          setRecognizing(false);
+          setInterimText("");
+          clearSilenceTimers();
+
+          let message = "Speech recognition is unavailable in this browser right now. Please use Chrome or Edge and allow microphone access.";
+          if (errorCode === "not-allowed" || errorCode === "service-not-allowed") {
+            message = "Microphone permission was denied. Please allow microphone access.";
+          } else if (errorCode === "network") {
+            message = "Voice input is temporarily unavailable. Please check your connection or use Chrome/Edge with microphone permission enabled.";
+          } else if (errorCode === "audio-capture") {
+            message = "No microphone was detected. Please connect a working microphone and try again.";
+          }
+
+          setVoiceInputWarning(message);
+          alert(message);
+          return;
         }
+
         setRecognizing(false);
         setInterimText("");
         clearSilenceTimers();
       };
 
       recognition.onend = () => {
+        if (recognitionRef.current !== recognition) {
+          return;
+        }
+
         setRecognizing(false);
+        const finalText = (baseInputRef.current + " " + interimTranscriptRef.current).trim();
         setInterimText("");
+
+        if (finalText) {
+          flushPendingSpeech();
+          return;
+        }
+
+        if (!requestInFlightRef.current && !sessionCompleteRef.current && !loading && !isSpeaking) {
+          recognitionRef.current = null;
+        }
       };
 
       recognition.start();
@@ -441,7 +529,7 @@ export default function ChatUI({
       console.error("Failed to start speech recognition:", err);
       setRecognizing(false);
     }
-  }, [autoFlow, clearSilenceTimers, input, sendMessage, stopSpeaking]);
+  }, [autoFlow, clearSilenceTimers, isSpeaking, loading, sendMessage, stopSpeaking, submitTextInput]);
 
   // Speak text with high quality settings and automated turn transition
   const speakText = useCallback(
@@ -671,9 +759,12 @@ export default function ChatUI({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    const submitted = (input || baseInputRef.current).trim();
+    if (!submitted || loading) return;
     clearSilenceTimers();
-    sendMessage(input.trim());
+    setInput("");
+    baseInputRef.current = "";
+    void sendMessage(submitted);
   }
 
   const buildVoiceSuggestions = (scores: Record<string, number>, tips: string[]) => {
@@ -1238,6 +1329,12 @@ export default function ChatUI({
 
       {/* Input & Voice Controls Footer */}
       <div className="p-4 bg-white border-t border-slate-200 flex flex-col gap-3">
+        {voiceInputWarning && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 font-medium">
+            {voiceInputWarning}
+          </div>
+        )}
+
         {/* Upper toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -1245,18 +1342,28 @@ export default function ChatUI({
             <button
               type="button"
               onClick={recognizing ? stopRecognition : startRecognition}
-              disabled={loading || isSpeaking}
+              disabled={loading || isSpeaking || !!voiceInputWarning}
               className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition shadow-sm ${
                 recognizing
                   ? "bg-rose-600 text-white hover:bg-rose-700 animate-pulse"
                   : isSpeaking
                   ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                  : voiceInputWarning
+                  ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                   : "bg-emerald-600 text-white hover:bg-emerald-700"
               }`}
-              title={isSpeaking ? "Microphone paused while AI is speaking" : recognizing ? "Click to finish speaking" : "Click to speak your answer"}
+              title={
+                isSpeaking
+                  ? "Microphone paused while AI is speaking"
+                  : recognizing
+                  ? "Click to finish speaking"
+                  : voiceInputWarning
+                  ? "Voice input requires Chrome or Edge with microphone permission"
+                  : "Click to speak your answer"
+              }
             >
               <span>{recognizing ? "⏹" : "🎙"}</span>
-              <span>{recognizing ? "Finish Speaking" : isSpeaking ? "Mic Paused (AI Talking)" : "Voice Input"}</span>
+              <span>{recognizing ? "Finish Speaking" : isSpeaking ? "Mic Paused (AI Talking)" : voiceInputWarning ? "Voice Unavailable" : "Voice Input"}</span>
             </button>
 
             {/* Quick camera switch */}
@@ -1298,7 +1405,7 @@ export default function ChatUI({
         </div>
 
         {/* Text input form with Auto-Flow indicators */}
-        <form onSubmit={handleSubmit} className="relative flex items-center">
+        <form onSubmit={handleSubmit} className="relative flex items-center gap-2">
           <input
             value={input}
             onChange={(e) => {
@@ -1310,11 +1417,18 @@ export default function ChatUI({
                 ? "Interviewer is speaking... (Mic will automatically open when finished)"
                 : recognizing
                 ? "Listening... your answer is evaluated after 4.5 seconds of silence"
-                  : "Speak your answer; it will be handled automatically…"
+                  : "Type or speak your answer..."
             }
             disabled={loading}
             className="w-full bg-slate-100 border border-slate-200 text-slate-900 rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all shadow-inner disabled:opacity-60 text-xs sm:text-sm"
           />
+          <button
+            type="submit"
+            disabled={loading || !input.trim()}
+            className="px-4 py-2.5 rounded-full bg-indigo-600 text-white font-semibold text-xs hover:bg-indigo-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+          >
+            Send
+          </button>
         </form>
       </div>
 

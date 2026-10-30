@@ -51,7 +51,17 @@ def chat(req: DebateRequest):
         "a generic rebuttal. Keep responses to 3-5 sentences."
     )
 
-    messages = [{"role": m.role, "content": m.content} for m in req.history]
+    messages = []
+    for item in req.history:
+        if hasattr(item, "role"):
+            role = item.role
+            content = item.content
+        else:
+            role = item.get("role")
+            content = item.get("content", "")
+        if role is not None:
+            messages.append({"role": role, "content": content})
+
     if not messages:
         messages = [{"role": "user", "content": f"I'll start: {req.topic}."}]
 
@@ -67,7 +77,13 @@ def chat(req: DebateRequest):
             logger.warning(f"Groq debate error: {e}. Falling back to default counter-argument.")
 
     # Resilient fallback counter-argument
-    last_user_msg = next((m.content for m in reversed(messages) if m.role == "user"), req.topic)
+    last_user_msg = req.topic
+    for message in reversed(messages):
+        role = message.get("role") if isinstance(message, dict) else getattr(message, "role", None)
+        content = message.get("content") if isinstance(message, dict) else getattr(message, "content", "")
+        if role == "user" and content:
+            last_user_msg = content
+            break
     reply = (
         f"While you raise an interesting point regarding \"{last_user_msg[:60]}...\", "
         f"overlooking the systemic trade-offs and negative externalities makes that position difficult to sustain. "

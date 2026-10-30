@@ -6,7 +6,11 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from groq import Groq
-from routes.sessions import save_session
+
+try:
+    from .sessions import save_session
+except ImportError:  # pragma: no cover - supports running as a script from the backend dir
+    from routes.sessions import save_session
 
 try:
     import spacy

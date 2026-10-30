@@ -7,10 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 # Load settings from this backend folder's local environment file.
 load_dotenv(dotenv_path=Path(__file__).with_name(".env.local"))
 
-from routes.analysis import router as analysis_router
-from routes.debate import router as debate_router
-from routes.mock_interview import router as mock_interview_router
-from routes.sessions import router as sessions_router
+try:
+    from .routes.analysis import router as analysis_router
+    from .routes.debate import router as debate_router
+    from .routes.mock_interview import router as mock_interview_router
+    from .routes.sessions import router as sessions_router
+except ImportError:  # pragma: no cover - supports running as a script from the backend dir
+    from routes.analysis import router as analysis_router
+    from routes.debate import router as debate_router
+    from routes.mock_interview import router as mock_interview_router
+    from routes.sessions import router as sessions_router
 
 app = FastAPI(title="AI Debate & Interview Coach - Voice Engine Backend")
 

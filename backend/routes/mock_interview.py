@@ -179,6 +179,38 @@ def chat(req: ChatRequest):
             reply="Strong interview overall. You articulated your technical background and rationale clearly throughout our discussion. That concludes our mock interview session!"
         )
 
+    last_user_answer = ""
+    for message in reversed(messages):
+        role = message.get("role") if isinstance(message, dict) else getattr(message, "role", None)
+        content = message.get("content") if isinstance(message, dict) else getattr(message, "content", "")
+        if role == "user" and content and content.strip():
+            last_user_answer = re.sub(r"\s+", " ", content).strip()
+            break
+
+    if req.skip_answer:
+        fallback_topics = [
+            "Okay, let's move to the next topic. Can you walk me through a project where you had to make a trade-off between speed and reliability?",
+            "Let’s switch topics. What is one technical challenge from your resume that taught you the most about ownership or collaboration?",
+            "No problem. Tell me about a project where you had to solve a problem with incomplete requirements or shifting priorities.",
+            "Let’s keep moving. How do you decide when a technical solution is good enough to ship and when it needs more refinement?",
+        ]
+        question_idx = (turn - 1) % len(fallback_topics)
+        return ChatResponse(reply=fallback_topics[question_idx])
+
+    if last_user_answer:
+        answer_excerpt = last_user_answer[:120]
+        answer_context = (
+            f"You mentioned '{answer_excerpt}'. Can you tell me specifically about the challenge you faced, the trade-off you made, and the measurable result?"
+        )
+        detailed_followups = [
+            answer_context,
+            f"That example is useful. What was the hardest decision in that work, and how did you justify it to stakeholders or teammates?",
+            f"Could you dig one level deeper into that result: what changed for the user, the team, or the business after your solution?",
+            f"If you had to repeat that project today, what would you improve and why?",
+        ]
+        question_idx = (turn - 1) % len(detailed_followups)
+        return ChatResponse(reply=detailed_followups[question_idx])
+
     fallback_topics = [
         f"Strong answer. Regarding performance and scalability, what trade-offs did you make when designing your data flow?",
         f"Good explanation. Can you describe a critical bug or production incident you diagnosed in {skills[0] if skills else 'your previous projects'} and how you resolved it?",
@@ -190,7 +222,7 @@ def chat(req: ChatRequest):
     ]
 
     question_idx = (turn - 1) % len(fallback_topics)
-    prefix = "Understood, moving to the next topic. " if req.skip_answer else "Strong answer. "
+    prefix = "Strong answer. "
     reply = f"{prefix}{fallback_topics[question_idx]}"
     return ChatResponse(reply=reply)
 
